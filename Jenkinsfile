@@ -1,74 +1,40 @@
 pipeline {
     agent any
-
-    tools {
-        jdk 'jdk21'
-        maven 'maven3'
-    }
-
     environment {
-        SONAR_TOKEN = credentials('sonar-token')
-        NEXUS = credentials('nexus-auth')
+        DOCKERHUB = credentials('dockerhub-rahali')
+        SONAR_TOKEN = credentials('SONAR_TOKEN')
+        IMAGE = 'mohamedalrahali/devvops'
     }
-
     stages {
-
-        stage('Checkout') {
+        stage('Checkout') { steps { git branch: 'main', url: 'https://github.com/MohamedalRahali/devvops.git' } }
+        stage('Maven Build & Test') { steps { sh 'mvn -B clean verify' } }
+        stage('SonarCloud') {
             steps {
-                git branch: 'main', url: 'https://github.com/mohamedalirom/devops.git'
-            }
-        }
-
-        stage('Build') {
-            steps {
-                sh "mvn clean install -DskipTests=false"
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh "mvn test"
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('SonarQubeServer') {
-                    sh """
-                        mvn sonar:sonar \
-                          -Dsonar.projectKey=student-management \
-                          -Dsonar.host.url=http://sonarqube:9000 \
-                          -Dsonar.login=$SONAR_TOKEN
-                    """
+                withSonarQubeEnv('SonarCloud') {
+                    sh 'mvn -B sonar:sonar -Dsonar.projectKey=mohamedalrahali_devvops -Dsonar.organization=mohamedrahali -Dsonar.login=$SONAR_TOKEN'
                 }
             }
         }
-
-        stage('Quality Gate') {
+        stage('Docker Build & Push') {
             steps {
-                timeout(time: 2, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
+                sh '''
+                docker build -t ${IMAGE}:${BUILD_NUMBER} .
+                docker tag ${IMAGE}:${BUILD_NUMBER} ${IMAGE}:latest
+                echo $DOCKERHUB_PSW | docker login -u $DOCKERHUB_USR --password-stdin
+                docker push ${IMAGE}:${BUILD_NUMBER}
+                docker push ${IMAGE}:latest
+                '''
             }
         }
-
-        stage('Deploy to Nexus') {
+        stage('Deploy to Minikube') {
             steps {
-                sh "mvn deploy"
-            }
-        }
-
-        stage('Docker Build') {
-            steps {
-                sh "docker build -t student-management:latest ."
-            }
-        }
-
-        stage('Docker Compose Deploy') {
-            steps {
-                sh "docker compose down || true"
-                sh "docker compose up -d --build"
+                sh '''
+                sed -i "s|mohamedalrahali/devvops:latest|${IMAGE}:${BUILD_NUMBER}|g" k8s/deployment.yaml
+                kubectl apply -f k8s/deployment.yaml
+                kubectl apply -f k8s/service.yaml
+                '''
             }
         }
     }
+    post { success { echo 'Pipeline complète terminée avec succès !' } }
 }
