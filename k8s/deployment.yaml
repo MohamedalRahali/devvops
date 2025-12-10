@@ -13,10 +13,7 @@ spec:
         app: student-management
     spec:
       containers:
-        - name: student-management
-          image: mohamedalrahali/devvops:latest
-          ports:
-            - containerPort: 8080
-          env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: "prod"
+      - name: student-management
+        image: mohamedalrahali/devvops:latest
+        ports:
+        - containerPort: 8080
